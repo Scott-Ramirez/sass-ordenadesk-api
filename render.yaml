@@ -1,0 +1,18 @@
+services:
+  - type: web
+    name: sass-ordenadesk-api
+    env: docker
+    dockerfilePath: ./Dockerfile
+    plan: free
+    healthCheckPath: /plans
+    envVars:
+      - key: NODE_ENV
+        value: production
+      - key: PORT
+        value: 3000
+      - key: DATABASE_URL
+        sync: false
+      - key: DIRECT_URL
+        sync: false
+      - key: ALLOWED_ORIGINS
+        sync: false

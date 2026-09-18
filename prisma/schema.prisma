@@ -1,0 +1,357 @@
+generator client {
+  provider = "prisma-client-js"
+}
+
+datasource db {
+  provider  = "postgresql"
+  url       = env("DATABASE_URL")
+  directUrl = env("DIRECT_URL")
+}
+
+// ----------------------------------------------------
+// ENUMS
+// ----------------------------------------------------
+
+enum PlanType {
+  LIFETIME
+  ANNUAL
+  MONTHLY
+  FREE
+}
+
+enum LicenseStatus {
+  ACTIVE
+  SUSPENDED
+  EXPIRED
+  REFUNDED
+}
+
+enum IssueType {
+  BUG
+  FEATURE
+  PERFORMANCE
+}
+
+enum ReportStatus {
+  PENDING
+  INVESTIGATING
+  RESOLVED
+  DISMISSED
+}
+
+enum BillingInterval {
+  MONTHLY
+  ANNUAL
+  LIFETIME
+  FREE
+}
+
+enum SubscriptionStatus {
+  TRIALING
+  ACTIVE
+  PAST_DUE
+  CANCELLED
+  EXPIRED
+}
+
+enum PaymentStatus {
+  PENDING
+  SUCCEEDED
+  FAILED
+  REFUNDED
+}
+
+enum InvoiceType {
+  BOLETA
+  FACTURA
+}
+
+enum InvoiceStatus {
+  DRAFT
+  EMITTED
+  ACCEPTED
+  REJECTED
+  ANNULLED
+}
+
+// ----------------------------------------------------
+// TABLAS EXISTENTES (COMPATIBILIDAD 100% GARANTIZADA)
+// ----------------------------------------------------
+
+model User {
+  id              String         @id @default(uuid())
+  email           String         @unique
+  name            String?
+  createdAt       DateTime       @default(now())
+  updatedAt       DateTime       @updatedAt
+  
+  // Marco legal (Ley 29733 y Términos de Servicio)
+  termsAcceptedAt DateTime?
+  termsVersion    String?
+
+  licenses        License[]
+  reports         Report[]
+  subscriptions   Subscription[]
+  payments        Payment[]
+  invoices        Invoice[]
+  trialUsages     TrialUsage[]
+
+  @@map("users")
+}
+
+model License {
+  id            String        @id @default(uuid())
+  key           String        @unique
+  planType      PlanType      @default(LIFETIME)
+  status        LicenseStatus @default(ACTIVE)
+  maxDevices    Int           @default(3)
+  expiresAt     DateTime?
+  
+  lemonOrderId  String?       @unique
+  customerEmail String
+  customerName  String?
+  
+  createdAt     DateTime      @default(now())
+  updatedAt     DateTime      @updatedAt
+
+  userId        String?
+  user          User?         @relation(fields: [userId], references: [id], onDelete: SetNull)
+
+  // Vinculación opcional a suscripción recurrente
+  subscriptionId String?
+  subscription   Subscription? @relation(fields: [subscriptionId], references: [id], onDelete: SetNull)
+
+  devices       Device[]
+  activations   ActivationLog[]
+
+  @@map("licenses")
+}
+
+model Device {
+  id            String    @id @default(uuid())
+  machineId     String
+  machineName   String?
+  osVersion     String?
+  appVersion    String?
+  isActive      Boolean   @default(true)
+  firstLinkedAt DateTime  @default(now())
+  lastSeenAt    DateTime  @default(now())
+
+  licenseId     String
+  license       License   @relation(fields: [licenseId], references: [id], onDelete: Cascade)
+
+  @@unique([licenseId, machineId])
+  @@map("devices")
+}
+
+model ActivationLog {
+  id        String   @id @default(uuid())
+  licenseId String
+  license   License  @relation(fields: [licenseId], references: [id], onDelete: Cascade)
+  machineId String
+  ipAddress String?
+  action    String
+  details   Json?
+  timestamp DateTime @default(now())
+
+  @@map("activation_logs")
+}
+
+model Report {
+  id           String       @id @default(uuid())
+  type         IssueType    @default(BUG)
+  description  String
+  contactEmail String?
+  diagnostics  Json?
+  status       ReportStatus @default(PENDING)
+  createdAt    DateTime     @default(now())
+  updatedAt    DateTime     @updatedAt
+
+  userId       String?
+  user         User?        @relation(fields: [userId], references: [id], onDelete: SetNull)
+
+  @@map("reports")
+}
+
+// ----------------------------------------------------
+// TABLAS NUEVAS (COMERCIAL, PAGOS, FACTURACIÓN Y TRIAL)
+// ----------------------------------------------------
+
+model Plan {
+  id              String         @id
+  name            String
+  description     String?
+  
+  maxDevices      Int            @default(3)
+  hasAutomation   Boolean        @default(true)
+  hasDuplicates   Boolean        @default(true)
+  
+  featuresDisplay Json           @default("[]")
+  isActive        Boolean        @default(true)
+  
+  createdAt       DateTime       @default(now())
+  updatedAt       DateTime       @updatedAt
+
+  prices          PlanPrice[]
+  subscriptions   Subscription[]
+
+  @@map("plans")
+}
+
+model PlanPrice {
+  id               String          @id @default(uuid())
+  planId           String
+  plan             Plan            @relation(fields: [planId], references: [id], onDelete: Restrict)
+  currency         String
+  amount           Decimal         @db.Decimal(10, 2)
+  billingInterval  BillingInterval
+  gatewayPriceId   String?
+  isActive         Boolean         @default(true)
+  createdAt        DateTime        @default(now())
+  updatedAt        DateTime        @updatedAt
+
+  subscriptions    Subscription[]
+
+  @@map("plan_prices")
+}
+
+model Subscription {
+  id                    String             @id @default(uuid())
+  userId                String
+  user                  User               @relation(fields: [userId], references: [id], onDelete: Restrict)
+  planId                String
+  plan                  Plan               @relation(fields: [planId], references: [id], onDelete: Restrict)
+  planPriceId           String
+  planPrice             PlanPrice          @relation(fields: [planPriceId], references: [id], onDelete: Restrict)
+  
+  status                SubscriptionStatus @default(TRIALING)
+  currentPeriodStart    DateTime
+  currentPeriodEnd      DateTime?
+  cancelAtPeriodEnd     Boolean            @default(false)
+  canceledAt            DateTime?
+  
+  gateway               String?
+  gatewaySubscriptionId String?
+  gatewayCustomerId     String?
+  metadata              Json?
+  
+  createdAt             DateTime           @default(now())
+  updatedAt             DateTime           @updatedAt
+
+  payments              Payment[]
+  licenses              License[]
+
+  @@index([userId])
+  @@index([status])
+  @@index([gatewaySubscriptionId])
+  @@map("subscriptions")
+}
+
+model Payment {
+  id                   String        @id @default(uuid())
+  userId               String
+  user                 User          @relation(fields: [userId], references: [id], onDelete: Restrict)
+  subscriptionId       String?
+  subscription         Subscription? @relation(fields: [subscriptionId], references: [id], onDelete: SetNull)
+  
+  amount               Decimal       @db.Decimal(10, 2)
+  currency             String
+  status               PaymentStatus @default(PENDING)
+  gateway              String
+  gatewayTransactionId String
+  paymentMethod        String?
+  paidAt               DateTime?
+  rawResponse          Json?
+  
+  createdAt            DateTime      @default(now())
+  updatedAt            DateTime      @updatedAt
+
+  invoices             Invoice[]
+
+  @@unique([gateway, gatewayTransactionId])
+  @@index([userId])
+  @@index([status])
+  @@map("payments")
+}
+
+model Invoice {
+  id                 String        @id @default(uuid())
+  userId             String
+  user               User          @relation(fields: [userId], references: [id], onDelete: Restrict)
+  paymentId          String?
+  payment            Payment?      @relation(fields: [paymentId], references: [id], onDelete: SetNull)
+  
+  type               InvoiceType
+  series             String
+  number             Int
+  
+  customerDocType    String
+  customerDocNumber  String
+  customerLegalName  String
+  customerAddress    String?
+  
+  subtotal           Decimal       @db.Decimal(10, 2)
+  tax                Decimal       @db.Decimal(10, 2)
+  total              Decimal       @db.Decimal(10, 2)
+  currency           String        @default("PEN")
+  
+  status             InvoiceStatus @default(DRAFT)
+  electronicData     Json?
+  pdfUrl             String?
+  xmlUrl             String?
+  issuedAt           DateTime      @default(now())
+  createdAt          DateTime      @default(now())
+
+  items              InvoiceItem[]
+  creditNotes        CreditNote[]
+
+  @@unique([type, series, number])
+  @@index([userId])
+  @@index([customerDocNumber])
+  @@map("invoices")
+}
+
+model InvoiceItem {
+  id               String   @id @default(uuid())
+  invoiceId        String
+  invoice          Invoice  @relation(fields: [invoiceId], references: [id], onDelete: Cascade)
+  description      String
+  quantity         Int      @default(1)
+  unitPrice        Decimal  @db.Decimal(10, 2)
+  subtotal         Decimal  @db.Decimal(10, 2)
+  tax              Decimal  @db.Decimal(10, 2)
+  total            Decimal  @db.Decimal(10, 2)
+  sunatProductCode String   @default("81111508")
+
+  @@map("invoice_items")
+}
+
+model CreditNote {
+  id                String        @id @default(uuid())
+  invoiceId         String
+  invoice           Invoice       @relation(fields: [invoiceId], references: [id], onDelete: Restrict)
+  series            String
+  number            Int
+  reasonCode        String
+  reasonDescription String
+  total             Decimal       @db.Decimal(10, 2)
+  status            InvoiceStatus @default(DRAFT)
+  electronicData    Json?
+  issuedAt          DateTime      @default(now())
+
+  @@unique([series, number])
+  @@map("credit_notes")
+}
+
+model TrialUsage {
+  id             String    @id @default(uuid())
+  machineId      String
+  userId         String?
+  user           User?     @relation(fields: [userId], references: [id], onDelete: SetNull)
+  cleanupNumber  Int
+  itemsOrganized Int
+  createdAt      DateTime  @default(now())
+
+  @@index([machineId])
+  @@map("trial_usages")
+}
