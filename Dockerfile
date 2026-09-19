@@ -25,6 +25,7 @@ RUN npm run build
 
 # Mantener únicamente dependencias de producción
 RUN npm prune --omit=dev
+RUN npx prisma generate
 
 # ==========================================
 # Etapa 2: Producción (Runner)
