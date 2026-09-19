@@ -1,3 +1,4 @@
+import { AuthModule } from './auth/auth.module';
 import { Module } from '@nestjs/common';
 import { APP_GUARD, APP_INTERCEPTOR } from '@nestjs/core';
 import { ThrottlerModule, ThrottlerGuard } from '@nestjs/throttler';
@@ -23,6 +24,7 @@ import { TimeoutInterceptor } from './core/interceptors/timeout.interceptor';
     PlansModule,
     LicensesModule,
     TrialsModule,
+    AuthModule,
     ReportsModule,
   ],
   controllers: [AppController],
