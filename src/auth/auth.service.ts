@@ -127,7 +127,24 @@ export class AuthService {
 
     let trial = { allowed: true, usedCount: 0, remainingCount: 3, maxAllowed: 3 };
     if (dto.machineId) {
+      await this.prisma.trialUsage.updateMany({
+        where: { machineId: dto.machineId, userId: null },
+        data: { userId: activeUser.id },
+      });
       trial = await this.checkTrialUseCase.execute(dto.machineId);
+    } else {
+      const userTrials = await this.prisma.trialUsage.count({
+        where: { userId: activeUser.id },
+      });
+      if (userTrials > 0) {
+        const remaining = Math.max(0, 3 - userTrials);
+        trial = {
+          allowed: remaining > 0,
+          usedCount: userTrials,
+          remainingCount: remaining,
+          maxAllowed: 3,
+        };
+      }
     }
 
     return {
