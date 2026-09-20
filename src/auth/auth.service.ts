@@ -80,10 +80,20 @@ export class AuthService {
       user = await this.prisma.user.create({
         data: {
           email: normalizedEmail,
-          name: normalizedEmail.split('@')[0],
+          name: dto.name || normalizedEmail.split('@')[0],
           termsAcceptedAt: new Date(),
           termsVersion: 'v1.0',
         },
+        include: {
+          licenses: {
+            where: { status: 'ACTIVE' },
+          },
+        },
+      });
+    } else if (dto.name && dto.name.trim() && user.name !== dto.name) {
+      user = await this.prisma.user.update({
+        where: { id: user.id },
+        data: { name: dto.name },
         include: {
           licenses: {
             where: { status: 'ACTIVE' },
