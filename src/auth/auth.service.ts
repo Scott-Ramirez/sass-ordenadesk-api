@@ -102,7 +102,28 @@ export class AuthService {
       });
     }
 
-    const token = this.generateToken(user.id, user.email);
+    // Asociar posibles licencias previas compradas con este correo
+    await this.prisma.license.updateMany({
+      where: { customerEmail: normalizedEmail, userId: null },
+      data: { userId: user.id },
+    });
+
+    const refreshedUser = await this.prisma.user.findUnique({
+      where: { id: user.id },
+      include: {
+        licenses: {
+          include: {
+            devices: {
+              where: { isActive: true },
+            },
+          },
+          orderBy: { createdAt: 'desc' },
+        },
+      },
+    });
+
+    const activeUser = refreshedUser || user;
+    const token = this.generateToken(activeUser.id, activeUser.email);
 
     let trial = { allowed: true, usedCount: 0, remainingCount: 3, maxAllowed: 3 };
     if (dto.machineId) {
@@ -112,15 +133,84 @@ export class AuthService {
     return {
       token,
       user: {
-        id: user.id,
-        email: user.email,
-        name: user.name,
+        id: activeUser.id,
+        email: activeUser.email,
+        name: activeUser.name,
       },
       trial,
-      licenses: user.licenses.map((lic) => ({
+      licenses: (activeUser as any).licenses?.map((lic: any) => ({
+        id: lic.id,
         key: lic.key,
         planType: lic.planType,
+        status: lic.status,
         maxDevices: lic.maxDevices,
+        expiresAt: lic.expiresAt,
+        createdAt: lic.createdAt,
+        devices: lic.devices?.map((d: any) => ({
+          id: d.id,
+          machineId: d.machineId,
+          machineName: d.machineName,
+          osVersion: d.osVersion,
+          lastSeenAt: d.lastSeenAt,
+        })) || [],
+      })) || [],
+    };
+  }
+
+  verifyToken(token: string): { sub: string; email: string } | null {
+    try {
+      const parts = token.split('.');
+      if (parts.length !== 2) return null;
+      const [b64Payload, signature] = parts;
+      const expectedSig = crypto
+        .createHmac('sha256', process.env.JWT_SECRET || 'ordenadesk_secret_key_2026')
+        .update(b64Payload)
+        .digest('base64url');
+      if (signature !== expectedSig) return null;
+      const payload = JSON.parse(Buffer.from(b64Payload, 'base64url').toString('utf-8'));
+      if (payload.exp && payload.exp < Math.floor(Date.now() / 1000)) return null;
+      return payload;
+    } catch (_) {
+      return null;
+    }
+  }
+
+  async getProfile(userId: string) {
+    const user = await this.prisma.user.findUnique({
+      where: { id: userId },
+      include: {
+        licenses: {
+          include: {
+            devices: {
+              where: { isActive: true },
+            },
+          },
+          orderBy: { createdAt: 'desc' },
+        },
+      },
+    });
+
+    if (!user) return null;
+
+    return {
+      id: user.id,
+      email: user.email,
+      name: user.name,
+      licenses: user.licenses.map((lic) => ({
+        id: lic.id,
+        key: lic.key,
+        planType: lic.planType,
+        status: lic.status,
+        maxDevices: lic.maxDevices,
+        expiresAt: lic.expiresAt,
+        createdAt: lic.createdAt,
+        devices: lic.devices.map((d) => ({
+          id: d.id,
+          machineId: d.machineId,
+          machineName: d.machineName,
+          osVersion: d.osVersion,
+          lastSeenAt: d.lastSeenAt,
+        })),
       })),
     };
   }
