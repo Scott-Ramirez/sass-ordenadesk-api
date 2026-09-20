@@ -19,6 +19,7 @@ export class PrismaTrialRepository implements ITrialRepository {
     const record = await this.prisma.trialUsage.create({
       data: {
         machineId: params.machineId,
+        userId: params.userId,
         cleanupNumber: params.cleanupNumber,
         itemsOrganized: params.itemsOrganized,
       },

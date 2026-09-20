@@ -8,6 +8,7 @@ import { MAX_TRIAL_CLEANUPS } from './check-trial.use-case';
 
 export interface ConsumeTrialCommand {
   machineId: string;
+  userId?: string;
   itemsOrganized: number;
 }
 
@@ -31,6 +32,7 @@ export class ConsumeTrialUseCase {
 
     const record = await this.trialRepository.createUsage({
       machineId: command.machineId,
+      userId: command.userId,
       cleanupNumber: nextNumber,
       itemsOrganized: command.itemsOrganized,
     });

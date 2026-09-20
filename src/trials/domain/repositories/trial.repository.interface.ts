@@ -1,5 +1,6 @@
 export interface CreateTrialUsageParams {
   machineId: string;
+  userId?: string;
   cleanupNumber: number;
   itemsOrganized: number;
 }
